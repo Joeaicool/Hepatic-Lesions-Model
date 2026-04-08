@@ -102,9 +102,17 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 插入横幅图片
-if os.path.exists("Fig.png"):
-    st.image("Fig.png", use_container_width=True)
+# 插入横幅图片 (带防崩溃保护机制)
+try:
+    from PIL import Image
+    if os.path.exists("Fig.png"):
+        img = Image.open("Fig.png")
+        st.image(img, use_column_width=True)
+    elif os.path.exists("fig.png"): # 兼容小写
+        img = Image.open("fig.png")
+        st.image(img, use_column_width=True)
+except Exception as e:
+    st.warning(f"⚠️ 横幅图片加载失败，但不影响模型计算。详细信息: {e}")
 
 # =========================
 # 4. 数据与模型加载
