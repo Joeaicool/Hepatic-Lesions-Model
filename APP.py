@@ -233,30 +233,24 @@ if predict_btn:
 
     try:
         with st.spinner('Calculating SHAP values for personalized explainability...'):
-            bg_data = shap.sample(X_f[FEATURES], min(100, len(X_f)))
             
-            try:
-                explainer = shap.TreeExplainer(model)
-                shap_values_raw = explainer.shap_values(X_in)
-                if isinstance(shap_values_raw, list):
-                    sv_values = shap_values_raw[1][0]
-                    base_val = explainer.expected_value[1]
-                else:
-                    sv_values = shap_values_raw[0]
-                    base_val = explainer.expected_value
-                    if isinstance(base_val, (list, np.ndarray)):
-                         base_val = base_val[0]
-                sv_in_plot = shap.Explanation(values=sv_values, base_values=base_val, data=X_in.iloc[0].values, feature_names=FEATURES)
-            except Exception:
-                explainer = shap.KernelExplainer(model.predict_proba, bg_data)
-                shap_values_raw = explainer.shap_values(X_in)
-                if isinstance(shap_values_raw, list):
-                    sv_values = shap_values_raw[1][0]
-                    base_val = explainer.expected_value[1]
-                else:
-                    sv_values = shap_values_raw[0, :, 1] if shap_values_raw.ndim == 3 else shap_values_raw[0]
-                    base_val = explainer.expected_value[1] if isinstance(explainer.expected_value, (list, np.ndarray)) else explainer.expected_value
-                sv_in_plot = shap.Explanation(values=sv_values, base_values=base_val, data=X_in.iloc[0].values, feature_names=FEATURES)
+            # 提取 XGBoost 原生底层引擎以完美兼容 SHAP，彻底绕过 sklearn 的属性锁
+            booster = model.get_booster()
+            explainer = shap.TreeExplainer(booster)
+            
+            # 传入患者数据进行解释
+            shap_values_raw = explainer.shap_values(X_in)
+            
+            # 提取单行患者的 SHAP 值
+            sv_values = shap_values_raw[0]
+            
+            # 提取基线值 (Base Value)
+            base_val = explainer.expected_value
+            if isinstance(base_val, (list, np.ndarray)):
+                 base_val = base_val[0]
+                 
+            # 构建瀑布图所需的专属 Explanation 对象
+            sv_in_plot = shap.Explanation(values=sv_values, base_values=base_val, data=X_in.iloc[0].values, feature_names=FEATURES)
 
             p1, p2 = st.columns(2)
 
@@ -290,6 +284,7 @@ if predict_btn:
                 )
     except Exception as e:
         st.warning(f"⚠️ Could not generate SHAP explanation. Details: {e}")
+
 
     st.markdown('</div>', unsafe_allow_html=True)
 
