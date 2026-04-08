@@ -226,44 +226,35 @@ if predict_btn:
     # =========================
     st.markdown('<div class="card"><div class="card-title">🔍 Step 3: AI Explainability (SHAP Analysis)</div>', unsafe_allow_html=True)
     st.write("The plots below unpack the 'black box' of the AI, showing exactly how each biomarker pushes the patient's risk higher (Red) or lower (Blue) compared to the baseline.")
+    
     try:
-        import json
         with st.spinner('Calculating SHAP values for personalized explainability...'):
             
-            booster = model.get_booster()
+            # 【终极隔离策略】：将数据转换为纯数字（Numpy Array），彻底剥离 Pandas 表头，防止 SHAP 强行修改模型属性
+            X_in_np = X_in.values
+            bg_data_np = shap.sample(X_f[FEATURES], min(50, len(X_f))).values
             
-            # 【防弹衣 1】：潜入 XGBoost 底层，动态修复旧版 JSON 配置文件，防止 SHAP 源码崩溃
-            try:
-                config = json.loads(booster.save_config())
-                b_score = config.get("learner", {}).get("learner_model_param", {}).get("base_score", "")
-                if isinstance(b_score, str) and '[' in b_score:
-                    config["learner"]["learner_model_param"]["base_score"] = b_score.replace('[', '').replace(']', '')
-                    booster.load_config(json.dumps(config))
-            except Exception:
-                pass
+            # 建立一个完全隔离的“黑盒”预测函数，供 SHAP 调用
+            def blackbox_predict(data_array):
+                # 在黑盒内部重新套上 DataFrame 的外壳，以满足 XGBoost 对特征名字的严格要求
+                temp_df = pd.DataFrame(data_array, columns=FEATURES)
+                return model.predict_proba(temp_df)
+                
+            # 使用模型无关的 KernelExplainer 黑盒解释器，彻底绕开之前所有的底层报错 Bug
+            explainer = shap.KernelExplainer(blackbox_predict, bg_data_np)
             
-            # 【防弹衣 2】：双引擎自动切换
-            try:
-                # 首选高效引擎：TreeExplainer
-                explainer = shap.TreeExplainer(booster)
-                shap_values_raw = explainer.shap_values(X_in)
+            # 传入纯数字进行解释
+            shap_values_raw = explainer.shap_values(X_in_np)
+            
+            # 提取正类（恶性概率）的 SHAP 值
+            if isinstance(shap_values_raw, list):
+                sv_values = shap_values_raw[1][0]
+                base_val = explainer.expected_value[1]
+            else:
                 sv_values = shap_values_raw[0]
                 base_val = explainer.expected_value
-            except Exception:
-                # 后备无敌引擎：KernelExplainer (完全免疫内部数据格式 Bug)
-                bg_data = shap.sample(X_f[FEATURES], min(50, len(X_f)))
-                explainer = shap.KernelExplainer(model.predict_proba, bg_data)
-                shap_values_raw = explainer.shap_values(X_in)
-                if isinstance(shap_values_raw, list):
-                    sv_values = shap_values_raw[1][0]
-                    base_val = explainer.expected_value[1]
-                else:
-                    sv_values = shap_values_raw[0]
-                    base_val = explainer.expected_value
-            
-            # 安全提取 base_value
-            if isinstance(base_val, (list, np.ndarray)):
-                base_val = base_val[0]
+                
+            # 清洗基线值，彻底防止任何形式的字符串残留
             base_val_clean = float(str(base_val).replace('[', '').replace(']', ''))
             
             # 构造画图对象
