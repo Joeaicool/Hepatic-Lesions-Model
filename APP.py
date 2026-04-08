@@ -226,22 +226,47 @@ if predict_btn:
     # =========================
     st.markdown('<div class="card"><div class="card-title">🔍 Step 3: AI Explainability (SHAP Analysis)</div>', unsafe_allow_html=True)
     st.write("The plots below unpack the 'black box' of the AI, showing exactly how each biomarker pushes the patient's risk higher (Red) or lower (Blue) compared to the baseline.")
-
     try:
-        import re  # 引入强大的正则表达式库
+        import json
         with st.spinner('Calculating SHAP values for personalized explainability...'):
             
             booster = model.get_booster()
-            explainer = shap.TreeExplainer(booster)
             
-            shap_values_raw = explainer.shap_values(X_in)
-            sv_values = shap_values_raw[0]
+            # 【防弹衣 1】：潜入 XGBoost 底层，动态修复旧版 JSON 配置文件，防止 SHAP 源码崩溃
+            try:
+                config = json.loads(booster.save_config())
+                b_score = config.get("learner", {}).get("learner_model_param", {}).get("base_score", "")
+                if isinstance(b_score, str) and '[' in b_score:
+                    config["learner"]["learner_model_param"]["base_score"] = b_score.replace('[', '').replace(']', '')
+                    booster.load_config(json.dumps(config))
+            except Exception:
+                pass
             
-            # 终极正则提取法：无视一切嵌套数组、括号、单双引号，像手术刀一样强行剥离出科学计数法数字
-            base_val_raw = explainer.expected_value
-            match = re.search(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', str(base_val_raw))
-            base_val_clean = float(match.group()) if match else 0.0
+            # 【防弹衣 2】：双引擎自动切换
+            try:
+                # 首选高效引擎：TreeExplainer
+                explainer = shap.TreeExplainer(booster)
+                shap_values_raw = explainer.shap_values(X_in)
+                sv_values = shap_values_raw[0]
+                base_val = explainer.expected_value
+            except Exception:
+                # 后备无敌引擎：KernelExplainer (完全免疫内部数据格式 Bug)
+                bg_data = shap.sample(X_f[FEATURES], min(50, len(X_f)))
+                explainer = shap.KernelExplainer(model.predict_proba, bg_data)
+                shap_values_raw = explainer.shap_values(X_in)
+                if isinstance(shap_values_raw, list):
+                    sv_values = shap_values_raw[1][0]
+                    base_val = explainer.expected_value[1]
+                else:
+                    sv_values = shap_values_raw[0]
+                    base_val = explainer.expected_value
             
+            # 安全提取 base_value
+            if isinstance(base_val, (list, np.ndarray)):
+                base_val = base_val[0]
+            base_val_clean = float(str(base_val).replace('[', '').replace(']', ''))
+            
+            # 构造画图对象
             sv_in_plot = shap.Explanation(
                 values=sv_values,
                 base_values=base_val_clean,
