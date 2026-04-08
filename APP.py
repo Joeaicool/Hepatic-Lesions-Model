@@ -230,34 +230,29 @@ if predict_btn:
     try:
         with st.spinner('Calculating SHAP values for personalized explainability...'):
             
-            # 【终极隔离策略】：将数据转换为纯数字（Numpy Array），彻底剥离 Pandas 表头，防止 SHAP 强行修改模型属性
             X_in_np = X_in.values
             bg_data_np = shap.sample(X_f[FEATURES], min(50, len(X_f))).values
             
-            # 建立一个完全隔离的“黑盒”预测函数，供 SHAP 调用
+            # 【极其优雅的降维】：只提取 predict_proba 的恶性概率（[:, 1]），强行让 SHAP 进行单维计算
             def blackbox_predict(data_array):
-                # 在黑盒内部重新套上 DataFrame 的外壳，以满足 XGBoost 对特征名字的严格要求
                 temp_df = pd.DataFrame(data_array, columns=FEATURES)
-                return model.predict_proba(temp_df)
+                return model.predict_proba(temp_df)[:, 1]
                 
-            # 使用模型无关的 KernelExplainer 黑盒解释器，彻底绕开之前所有的底层报错 Bug
             explainer = shap.KernelExplainer(blackbox_predict, bg_data_np)
-            
-            # 传入纯数字进行解释
             shap_values_raw = explainer.shap_values(X_in_np)
             
-            # 提取正类（恶性概率）的 SHAP 值
-            if isinstance(shap_values_raw, list):
-                sv_values = shap_values_raw[1][0]
-                base_val = explainer.expected_value[1]
-            else:
-                sv_values = shap_values_raw[0]
-                base_val = explainer.expected_value
-                
-            # 清洗基线值，彻底防止任何形式的字符串残留
-            base_val_clean = float(str(base_val).replace('[', '').replace(']', ''))
+            # 因为数据变成了单维，提取变得极其干净
+            sv_values = shap_values_raw[0]
             
-            # 构造画图对象
+            # 提取纯粹的标量基准概率
+            base_val = explainer.expected_value
+            if isinstance(base_val, (list, np.ndarray)):
+                base_val = base_val[0]
+            
+            # 终极保险转码
+            base_val_clean = float(str(base_val).replace('[', '').replace(']', '').strip())
+            
+            # 构造完美的画图对象
             sv_in_plot = shap.Explanation(
                 values=sv_values,
                 base_values=base_val_clean,
@@ -298,6 +293,7 @@ if predict_btn:
                 
     except Exception as e:
         st.warning(f"⚠️ Could not generate SHAP explanation. Details: {e}")
+
 
 
     st.markdown('</div>', unsafe_allow_html=True)
