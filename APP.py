@@ -22,10 +22,7 @@ st.set_page_config(
 # =========================
 st.markdown("""
 <style>
-    /* 全局背景色 */
     .main { background-color: #F8F9FA; }
-    
-    /* 顶部标题卡片 */
     .title-box {
         background: linear-gradient(135deg, #0A2540 0%, #1750A1 100%);
         padding: 2rem;
@@ -37,8 +34,6 @@ st.markdown("""
     }
     .title-box h1 { margin: 0; font-size: 2.2rem; font-weight: 700; font-family: 'Helvetica Neue', sans-serif;}
     .title-box p { margin-top: 10px; font-size: 1.1rem; opacity: 0.9; }
-    
-    /* 临床说明卡片 */
     .clinical-note {
         background-color: #EBF4FA;
         padding: 1rem 1.5rem;
@@ -48,8 +43,6 @@ st.markdown("""
         color: #0A2540;
         font-size: 1rem;
     }
-    
-    /* 内容卡片 */
     .card {
         background: white;
         padding: 1.5rem;
@@ -66,8 +59,6 @@ st.markdown("""
         border-bottom: 2px solid #F1F5F9;
         padding-bottom: 0.5rem;
     }
-    
-    /* 页脚 */
     .footer {
         margin-top: 3rem;
         padding-top: 1.5rem;
@@ -102,34 +93,20 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# =========================
-# 插入横幅图片 (终极防崩溃：原生HTML+Base64渲染，彻底绕过PIL)
-# =========================
-import base64
-
+# 插入横幅图片 (已经修正为正确的 use_column_width)
 try:
-    img_path = "Fig.png"
-    if not os.path.exists(img_path) and os.path.exists("fig.png"):
-        img_path = "fig.png"
-        
-    if os.path.exists(img_path):
-        with open(img_path, "rb") as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode()
-        st.markdown(
-            f'<img src="data:image/png;base64,{encoded_string}" style="width:100%; border-radius:12px; margin-bottom:20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">',
-            unsafe_allow_html=True
-        )
+    if os.path.exists("Fig.png"):
+        st.image("Fig.png", use_column_width=True)
+    elif os.path.exists("fig.png"):
+        st.image("fig.png", use_column_width=True)
 except Exception:
-    # 即使发生天大的错误，也绝对静默跳过，保护下方核心 AI 模型继续运行！
     pass
-
 
 # =========================
 # 4. 数据与模型加载
 # =========================
 MODEL_FILE = "GB.pkl"
 DATA_FILE = "Final_Cleaned_Data.xlsx"
-# 更新为您最新的 9 个特征
 FEATURES = ['Mb', 'PIVKA-II', 'DBIL', 'CL', 'EO', 'GGT', 'Urea', 'AFP', 'RDW-CV']
 
 @st.cache_resource
@@ -141,8 +118,6 @@ def load_data():
     if os.path.exists(DATA_FILE):
         return pd.read_excel(DATA_FILE)
     else:
-        # 防报错智能回退机制：如果找不到 Excel，生成合理的临床模拟数据用于UI渲染和SHAP背景
-        st.toast("Background data file not found. Using simulated clinical ranges for UI rendering.", icon="⚠️")
         dummy_data = {
             'Mb': np.random.uniform(10, 500, 100),
             'PIVKA-II': np.random.uniform(10, 2000, 100),
@@ -160,10 +135,9 @@ try:
     model = load_model()
     df = load_data()
 except Exception as e:
-    st.error(f"⚠️ Error loading model `{MODEL_FILE}`. Please ensure it is uploaded to the repository. \nDetails: {e}")
+    st.error(f"⚠️ Error loading model `{MODEL_FILE}`. Details: {e}")
     st.stop()
 
-# 提取特征数据范围用于初始化输入框
 X_f = df[FEATURES] if all(f in df.columns for f in FEATURES) else df
 
 # =========================
@@ -171,7 +145,6 @@ X_f = df[FEATURES] if all(f in df.columns for f in FEATURES) else df
 # =========================
 st.markdown('<div class="card"><div class="card-title">📝 Step 1: Patient Biomarker Input</div>', unsafe_allow_html=True)
 
-# 使用 3 列布局让界面更紧凑美观 (9个特征正好3行3列)
 col1, col2, col3 = st.columns(3)
 columns = [col1, col2, col3, col1, col2, col3, col1, col2, col3]
 
@@ -183,7 +156,6 @@ for idx, f in enumerate(FEATURES):
             max_val = float(X_f[f].max())
             median_val = float(X_f[f].median())
             
-            # 宽容的输入边界设置，允许超出训练集极值
             v = st.number_input(
                 f"{f}",
                 min_value=0.0,
@@ -197,12 +169,10 @@ for idx, f in enumerate(FEATURES):
         input_vals.append(v)
         
 st.markdown('</div>', unsafe_allow_html=True)
-
-# 构建输入DataFrame
 X_in = pd.DataFrame([input_vals], columns=FEATURES)
 
 # =========================
-# 6. 预测与可视化 (核心结果区)
+# 6. 预测与可视化
 # =========================
 _, center_col, _ = st.columns([1, 2, 1])
 with center_col:
@@ -211,9 +181,7 @@ with center_col:
 if predict_btn:
     st.markdown('<div class="card"><div class="card-title">📊 Step 2: Prediction Results & Interpretation</div>', unsafe_allow_html=True)
     
-    # 模型预测
     prob_pos = model.predict_proba(X_in)[0][1] * 100
-    pred_class = model.predict(X_in)[0]
 
     res_c1, res_c2 = st.columns([1.2, 1])
 
@@ -230,7 +198,6 @@ if predict_btn:
         st.write("*Interpretation: A probability closer to 100% indicates higher risk. Please review the SHAP explainability plots below to understand which specific biomarkers are driving this patient's risk profile.*")
 
     with res_c2:
-        # Plotly 风险表盘
         fig_gauge = go.Figure(go.Indicator(
             mode="gauge+number",
             value=prob_pos,
@@ -242,9 +209,9 @@ if predict_btn:
                 "borderwidth": 2,
                 "bordercolor": "gray",
                 "steps": [
-                    {"range": [0, 30], "color": "rgba(40, 167, 69, 0.2)"},  # 绿 (良性)
-                    {"range": [30, 70], "color": "rgba(255, 193, 7, 0.2)"}, # 黄 (灰区)
-                    {"range": [70, 100], "color": "rgba(220, 53, 69, 0.2)"},# 红 (恶性)
+                    {"range": [0, 30], "color": "rgba(40, 167, 69, 0.2)"},
+                    {"range": [30, 70], "color": "rgba(255, 193, 7, 0.2)"},
+                    {"range": [70, 100], "color": "rgba(220, 53, 69, 0.2)"},
                 ],
                 "threshold": {
                     "line": {"color": "red", "width": 4},
@@ -259,22 +226,18 @@ if predict_btn:
     st.markdown('</div>', unsafe_allow_html=True)
 
     # =========================
-    # 7. SHAP 机器学习可解释性 (XAI)
+    # 7. SHAP 分析
     # =========================
     st.markdown('<div class="card"><div class="card-title">🔍 Step 3: AI Explainability (SHAP Analysis)</div>', unsafe_allow_html=True)
     st.write("The plots below unpack the 'black box' of the AI, showing exactly how each biomarker pushes the patient's risk higher (Red) or lower (Blue) compared to the baseline.")
 
     try:
         with st.spinner('Calculating SHAP values for personalized explainability...'):
-            # 提取背景数据
             bg_data = shap.sample(X_f[FEATURES], min(100, len(X_f)))
             
             try:
-                # 尝试使用TreeExplainer (针对 Gradient Boosting 最优)
                 explainer = shap.TreeExplainer(model)
                 shap_values_raw = explainer.shap_values(X_in)
-                
-                # 兼容不同版本 sklearn 提取二分类概率逻辑
                 if isinstance(shap_values_raw, list):
                     sv_values = shap_values_raw[1][0]
                     base_val = explainer.expected_value[1]
@@ -283,11 +246,8 @@ if predict_btn:
                     base_val = explainer.expected_value
                     if isinstance(base_val, (list, np.ndarray)):
                          base_val = base_val[0]
-                         
                 sv_in_plot = shap.Explanation(values=sv_values, base_values=base_val, data=X_in.iloc[0].values, feature_names=FEATURES)
-                
             except Exception:
-                # 备用方案 (KernelExplainer)
                 explainer = shap.KernelExplainer(model.predict_proba, bg_data)
                 shap_values_raw = explainer.shap_values(X_in)
                 if isinstance(shap_values_raw, list):
@@ -296,7 +256,6 @@ if predict_btn:
                 else:
                     sv_values = shap_values_raw[0, :, 1] if shap_values_raw.ndim == 3 else shap_values_raw[0]
                     base_val = explainer.expected_value[1] if isinstance(explainer.expected_value, (list, np.ndarray)) else explainer.expected_value
-                
                 sv_in_plot = shap.Explanation(values=sv_values, base_values=base_val, data=X_in.iloc[0].values, feature_names=FEATURES)
 
             p1, p2 = st.columns(2)
@@ -305,12 +264,11 @@ if predict_btn:
                 st.markdown("**SHAP Waterfall Plot**")
                 fig_wf, ax_wf = plt.subplots(figsize=(6, 5), dpi=150)
                 shap.plots.waterfall(sv_in_plot, max_display=10, show=False)
-                st.pyplot(fig_wf, use_container_width=True)
+                st.pyplot(fig_wf)
                 plt.close(fig_wf)
 
             with p2:
                 st.markdown("**Feature Contribution Ranking**")
-                # 计算贡献百分比
                 abs_sv = np.abs(sv_values)
                 total = abs_sv.sum() if abs_sv.sum() != 0 else 1.0
                 pct = abs_sv / total * 100
@@ -326,7 +284,7 @@ if predict_btn:
                     contrib_df.style.format({
                         "Patient Value": "{:.2f}",
                         "Contribution Impact": "{:.1f}%"
-                    }).background_gradient(subset=['Contribution Impact'], cmap='Reds'), # 改成红色渐变更符合肿瘤风险
+                    }).background_gradient(subset=['Contribution Impact'], cmap='Reds'),
                     use_container_width=True,
                     hide_index=True
                 )
