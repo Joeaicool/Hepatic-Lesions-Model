@@ -93,12 +93,14 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 插入横幅图片 (已经修正为正确的 use_column_width)
 try:
+    from PIL import Image
     if os.path.exists("Fig.png"):
-        st.image("Fig.png", use_column_width=True)
+        img = Image.open("Fig.png")
+        st.image(img, use_container_width=True)
     elif os.path.exists("fig.png"):
-        st.image("fig.png", use_column_width=True)
+        img = Image.open("fig.png")
+        st.image(img, use_container_width=True)
 except Exception:
     pass
 
@@ -107,6 +109,8 @@ except Exception:
 # =========================
 MODEL_FILE = "GB.pkl"
 DATA_FILE = "Final_Cleaned_Data.xlsx"
+
+# 【极度重要】：完全匹配模型内部记忆的顺序与名称
 FEATURES = ['Urea', 'PIVKA-Ⅱ', 'GGT', 'RDW-CV', 'EO#', 'DBIL', 'Mb', 'CL', 'AFP']
 
 @st.cache_resource
@@ -119,15 +123,15 @@ def load_data():
         return pd.read_excel(DATA_FILE)
     else:
         dummy_data = {
-            'Mb': np.random.uniform(10, 500, 100),
-            'PIVKA-Ⅱ': np.random.uniform(10, 2000, 100),
-            'DBIL': np.random.uniform(1, 50, 100),
-            'CL': np.random.uniform(90, 110, 100),
-            'EO#': np.random.uniform(0.01, 0.5, 100),
-            'GGT': np.random.uniform(10, 300, 100),
             'Urea': np.random.uniform(2, 15, 100),
-            'AFP': np.random.uniform(1, 1000, 100),
-            'RDW-CV': np.random.uniform(11, 18, 100)
+            'PIVKA-Ⅱ': np.random.uniform(10, 2000, 100),
+            'GGT': np.random.uniform(10, 300, 100),
+            'RDW-CV': np.random.uniform(11, 18, 100),
+            'EO#': np.random.uniform(0.01, 0.5, 100),
+            'DBIL': np.random.uniform(1, 50, 100),
+            'Mb': np.random.uniform(10, 500, 100),
+            'CL': np.random.uniform(90, 110, 100),
+            'AFP': np.random.uniform(1, 1000, 100)
         }
         return pd.DataFrame(dummy_data)
 
@@ -151,21 +155,13 @@ columns = [col1, col2, col3, col1, col2, col3, col1, col2, col3]
 input_vals = []
 for idx, f in enumerate(FEATURES):
     with columns[idx]:
-        if pd.api.types.is_numeric_dtype(X_f[f]):
+        if f in X_f.columns and pd.api.types.is_numeric_dtype(X_f[f]):
             min_val = float(X_f[f].min())
             max_val = float(X_f[f].max())
             median_val = float(X_f[f].median())
-            
-            v = st.number_input(
-                f"{f}",
-                min_value=0.0,
-                max_value=max_val * 10,
-                value=median_val,
-                help=f"Dataset Reference Range: {min_val:.2f} - {max_val:.2f}"
-            )
+            v = st.number_input(f"{f}", min_value=0.0, max_value=max_val * 10, value=median_val)
         else:
-            opts = X_f[f].unique().tolist()
-            v = st.selectbox(f"{f}", opts)
+            v = st.number_input(f"{f}", value=1.0)
         input_vals.append(v)
         
 st.markdown('</div>', unsafe_allow_html=True)
@@ -180,7 +176,7 @@ with center_col:
 
 if predict_btn:
     st.markdown('<div class="card"><div class="card-title">📊 Step 2: Prediction Results & Interpretation</div>', unsafe_allow_html=True)
-
+    
     prob_pos = model.predict_proba(X_in)[0][1] * 100
 
     res_c1, res_c2 = st.columns([1.2, 1])
@@ -226,7 +222,7 @@ if predict_btn:
     st.markdown('</div>', unsafe_allow_html=True)
 
     # =========================
-    # 7. SHAP 分析
+    # 7. SHAP 分析 (暴力剥离 BUG 防御版)
     # =========================
     st.markdown('<div class="card"><div class="card-title">🔍 Step 3: AI Explainability (SHAP Analysis)</div>', unsafe_allow_html=True)
     st.write("The plots below unpack the 'black box' of the AI, showing exactly how each biomarker pushes the patient's risk higher (Red) or lower (Blue) compared to the baseline.")
@@ -234,30 +230,26 @@ if predict_btn:
     try:
         with st.spinner('Calculating SHAP values for personalized explainability...'):
             
-            # 提取 XGBoost 原生底层引擎以完美兼容 SHAP，彻底绕过 sklearn 的属性锁
             booster = model.get_booster()
             explainer = shap.TreeExplainer(booster)
             
-            # 传入患者数据进行解释
             shap_values_raw = explainer.shap_values(X_in)
-            
-            # 提取单行患者的 SHAP 值
             sv_values = shap_values_raw[0]
             
-            # 提取基线值 (Base Value) 并强行剥离旧版 XGBoost 带来的括号字符
             base_val = explainer.expected_value
             if isinstance(base_val, (list, np.ndarray)):
-                 base_val = base_val[0]
+                base_val = base_val[0]
             
-            # 终极清洗：如果是带括号的字符串 (例如 '[0.5]')，强制扒掉括号并转换为纯数字
-            if isinstance(base_val, str):
-                base_val = float(base_val.strip('[]'))
-            else:
-                base_val = float(base_val)
-
-                 
-            # 构建瀑布图所需的专属 Explanation 对象
-            sv_in_plot = shap.Explanation(values=sv_values, base_values=base_val, data=X_in.iloc[0].values, feature_names=FEATURES)
+            # 暴力转换：无论它吐出什么奇怪格式的 "[0.57]"，强制扒掉括号转为纯数字
+            base_val_str = str(base_val).replace('[', '').replace(']', '')
+            base_val_clean = float(base_val_str)
+            
+            sv_in_plot = shap.Explanation(
+                values=sv_values,
+                base_values=base_val_clean,
+                data=X_in.iloc[0].values,
+                feature_names=FEATURES
+            )
 
             p1, p2 = st.columns(2)
 
@@ -277,7 +269,7 @@ if predict_btn:
                 contrib_df = pd.DataFrame({
                     "Biomarker": FEATURES,
                     "Patient Value": X_in.iloc[0].values,
-                    "Effect": ["⬆️ Increased Malignancy Risk" if v > 0 else "⬇️ Decreased Malignancy Risk" for v in sv_values],
+                    "Effect": ["⬆️ Increased Risk" if v > 0 else "⬇️ Decreased Risk" for v in sv_values],
                     "Contribution Impact": pct
                 }).sort_values("Contribution Impact", ascending=False)
 
@@ -289,9 +281,9 @@ if predict_btn:
                     use_container_width=True,
                     hide_index=True
                 )
+                
     except Exception as e:
         st.warning(f"⚠️ Could not generate SHAP explanation. Details: {e}")
-
 
     st.markdown('</div>', unsafe_allow_html=True)
 
