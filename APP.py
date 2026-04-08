@@ -180,11 +180,6 @@ with center_col:
 
 if predict_btn:
     st.markdown('<div class="card"><div class="card-title">📊 Step 2: Prediction Results & Interpretation</div>', unsafe_allow_html=True)
-    # 侦察代码开始
-    expected_features = model.get_booster().feature_names
-    st.error(f"⚠️ 破案了！模型内部死记硬背的特征顺序和名称是：{expected_features}")
-    st.stop()
-    # 侦察代码结束
 
     prob_pos = model.predict_proba(X_in)[0][1] * 100
 
