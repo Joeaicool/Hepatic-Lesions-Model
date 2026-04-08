@@ -228,6 +228,7 @@ if predict_btn:
     st.write("The plots below unpack the 'black box' of the AI, showing exactly how each biomarker pushes the patient's risk higher (Red) or lower (Blue) compared to the baseline.")
 
     try:
+        import re  # 引入强大的正则表达式库
         with st.spinner('Calculating SHAP values for personalized explainability...'):
             
             booster = model.get_booster()
@@ -236,13 +237,10 @@ if predict_btn:
             shap_values_raw = explainer.shap_values(X_in)
             sv_values = shap_values_raw[0]
             
-            base_val = explainer.expected_value
-            if isinstance(base_val, (list, np.ndarray)):
-                base_val = base_val[0]
-            
-            # 暴力转换：无论它吐出什么奇怪格式的 "[0.57]"，强制扒掉括号转为纯数字
-            base_val_str = str(base_val).replace('[', '').replace(']', '')
-            base_val_clean = float(base_val_str)
+            # 终极正则提取法：无视一切嵌套数组、括号、单双引号，像手术刀一样强行剥离出科学计数法数字
+            base_val_raw = explainer.expected_value
+            match = re.search(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', str(base_val_raw))
+            base_val_clean = float(match.group()) if match else 0.0
             
             sv_in_plot = shap.Explanation(
                 values=sv_values,
@@ -284,6 +282,7 @@ if predict_btn:
                 
     except Exception as e:
         st.warning(f"⚠️ Could not generate SHAP explanation. Details: {e}")
+
 
     st.markdown('</div>', unsafe_allow_html=True)
 
