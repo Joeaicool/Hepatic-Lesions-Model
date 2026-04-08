@@ -244,10 +244,17 @@ if predict_btn:
             # 提取单行患者的 SHAP 值
             sv_values = shap_values_raw[0]
             
-            # 提取基线值 (Base Value)
+            # 提取基线值 (Base Value) 并强行剥离旧版 XGBoost 带来的括号字符
             base_val = explainer.expected_value
             if isinstance(base_val, (list, np.ndarray)):
                  base_val = base_val[0]
+            
+            # 终极清洗：如果是带括号的字符串 (例如 '[0.5]')，强制扒掉括号并转换为纯数字
+            if isinstance(base_val, str):
+                base_val = float(base_val.strip('[]'))
+            else:
+                base_val = float(base_val)
+
                  
             # 构建瀑布图所需的专属 Explanation 对象
             sv_in_plot = shap.Explanation(values=sv_values, base_values=base_val, data=X_in.iloc[0].values, feature_names=FEATURES)
