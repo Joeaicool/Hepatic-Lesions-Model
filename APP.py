@@ -107,7 +107,7 @@ except Exception:
 # =========================
 MODEL_FILE = "GB.pkl"
 DATA_FILE = "Final_Cleaned_Data.xlsx"
-FEATURES = ['Mb', 'PIVKA', 'DBIL', 'CL', 'EO', 'GGT', 'Urea', 'AFP', 'RDW-CV']
+FEATURES = ['Mb', 'PIVKA-Ⅱ', 'DBIL', 'CL', 'EO', 'GGT', 'Urea', 'AFP', 'RDW-CV']
 
 @st.cache_resource
 def load_model():
@@ -120,7 +120,7 @@ def load_data():
     else:
         dummy_data = {
             'Mb': np.random.uniform(10, 500, 100),
-            'PIVKA': np.random.uniform(10, 2000, 100),
+            'PIVKA-Ⅱ': np.random.uniform(10, 2000, 100),
             'DBIL': np.random.uniform(1, 50, 100),
             'CL': np.random.uniform(90, 110, 100),
             'EO': np.random.uniform(0.01, 0.5, 100),
