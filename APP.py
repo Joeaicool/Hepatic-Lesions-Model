@@ -102,17 +102,27 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 插入横幅图片 (带防崩溃保护机制)
+# =========================
+# 插入横幅图片 (终极防崩溃：原生HTML+Base64渲染，彻底绕过PIL)
+# =========================
+import base64
+
 try:
-    from PIL import Image
-    if os.path.exists("Fig.png"):
-        img = Image.open("Fig.png")
-        st.image(img, use_column_width=True)
-    elif os.path.exists("fig.png"): # 兼容小写
-        img = Image.open("fig.png")
-        st.image(img, use_column_width=True)
-except Exception as e:
-    st.warning(f"⚠️ 横幅图片加载失败，但不影响模型计算。详细信息: {e}")
+    img_path = "Fig.png"
+    if not os.path.exists(img_path) and os.path.exists("fig.png"):
+        img_path = "fig.png"
+        
+    if os.path.exists(img_path):
+        with open(img_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+        st.markdown(
+            f'<img src="data:image/png;base64,{encoded_string}" style="width:100%; border-radius:12px; margin-bottom:20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">',
+            unsafe_allow_html=True
+        )
+except Exception:
+    # 即使发生天大的错误，也绝对静默跳过，保护下方核心 AI 模型继续运行！
+    pass
+
 
 # =========================
 # 4. 数据与模型加载
